@@ -122,12 +122,12 @@ def get_cosine_similarity(user_prompt, output_path, use_ai_prompt, ai_generated_
     if(use_ai_prompt and ai_generated_prompt.strip() != ""):
         ai_generated_caption = improve_prompt(image_caption)
         print("AI Generated Caption:", ai_generated_caption) 
-        cosine_similarity = cosine_similarity.get_cosine_similarity(ai_generated_prompt, ai_generated_caption)        
+        cosine_similarity_value = cosine_similarity.get_cosine_similarity(ai_generated_prompt, ai_generated_caption)        
     else:
         print("Image Caption:", image_caption) 
-        cosine_similarity = cosine_similarity.get_cosine_similarity(user_prompt, image_caption)        
+        cosine_similarity_value = cosine_similarity.get_cosine_similarity(user_prompt, image_caption)        
         
-    return cosine_similarity
+    return cosine_similarity_value
 
 def generate_image_caption(image_path):
 
