@@ -8,7 +8,12 @@ from diffusers import StableDiffusionXLImg2ImgPipeline
 from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
 from transformers import CLIPProcessor, CLIPModel
-from cosine_similarity import get_cosine_similarity
+import cosine_similarity
+
+from fastapi import FastAPI
+import prometheus_client as prom
+
+app = FastAPI()
 
 from dotenv import load_dotenv
 
@@ -76,8 +81,9 @@ def generate_image(user_prompt, use_ai_prompt, ai_generated_prompt, selected_mod
     output_path = "ui_screenshot/ai_generated_image.png"
     image.save(output_path)
 
-    log_clip_score(image, prompt)
-    log_cosine_similarity(user_prompt, output_path, use_ai_prompt, ai_generated_prompt)
+    clip_score = get_clip_score(image, prompt)
+    cosine_similarity = get_cosine_similarity(user_prompt, output_path, use_ai_prompt, ai_generated_prompt)
+    update_metrics(clip_score, cosine_similarity)
 
     return image
 
@@ -93,7 +99,7 @@ def refine_generated_image(generated_image_output):
     refined_image = pipe(prompt, image=input_image).images[0]
     return refined_image
 
-def CLIP_score_calculator(image, prompt):
+def clip_score_calculator(image, prompt):
     clip_model_id = "openai/clip-vit-base-patch32"
     clip_model = CLIPModel.from_pretrained(clip_model_id)
     clip_processor = CLIPProcessor.from_pretrained(clip_model_id)
@@ -107,22 +113,21 @@ def CLIP_score_calculator(image, prompt):
     score = logits_per_image.item()
     return score
 
-def log_clip_score(image, prompt):
-    clip_score = CLIP_score_calculator(image, prompt)
-    print("Clip score:", clip_score)
+def get_clip_score(image, prompt):
+    clip_score = clip_score_calculator(image, prompt)
+    return clip_score
     
-
-def log_cosine_similarity(user_prompt, output_path, use_ai_prompt, ai_generated_prompt):
+def get_cosine_similarity(user_prompt, output_path, use_ai_prompt, ai_generated_prompt):
     image_caption = generate_image_caption(output_path)
     if(use_ai_prompt and ai_generated_prompt.strip() != ""):
         ai_generated_caption = improve_prompt(image_caption)
         print("AI Generated Caption:", ai_generated_caption) 
-        cosine_similarity = get_cosine_similarity(ai_generated_prompt, ai_generated_caption)        
+        cosine_similarity = cosine_similarity.get_cosine_similarity(ai_generated_prompt, ai_generated_caption)        
     else:
         print("Image Caption:", image_caption) 
-        cosine_similarity = get_cosine_similarity(user_prompt, image_caption)        
+        cosine_similarity = cosine_similarity.get_cosine_similarity(user_prompt, image_caption)        
         
-    print("Cosine Similarity: ", cosine_similarity) 
+    return cosine_similarity
 
 def generate_image_caption(image_path):
 
@@ -146,6 +151,13 @@ def generate_image_caption(image_path):
     out = model.generate(**inputs, **generation_args)
     caption = processor.decode(out[0], skip_special_tokens=True)
     return caption
+
+def update_metrics(clip_score, cosine_similarity):
+    clip_score_prom = prom.Gauge('clip_score', 'Clip Score: Image to Prompt correctness comparision')
+    cosine_similarity_prom = prom.Gauge('cosine_similarity', 'Prompt to Image Caption Comparision')
+
+    clip_score_prom.set(clip_score)
+    cosine_similarity_prom.set(cosine_similarity)
 
 models = getHuggingfaceModels()
 
@@ -189,5 +201,9 @@ with gr.Blocks() as demo:
 def launch():
     demo.launch(server_name="0.0.0.0", server_port=7860)
 
+@app.get("/metrics")
+async def get_metrics():
+    return Response(media_type="text/plain", content=prom.generate_latest())
+
 if __name__ == "__main__":
-    launch()    
+    launch()
