@@ -9,14 +9,11 @@ from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
 from transformers import CLIPProcessor, CLIPModel
 import cosine_similarity
-
-from fastapi import FastAPI
+import uvicorn
+from fastapi import FastAPI, Response
 import prometheus_client as prom
 
-app = FastAPI()
-
 from dotenv import load_dotenv
-
 load_dotenv()
 
 huggingfaceApKey = os.getenv("HUGGINGFACE_API_KEY")
@@ -24,6 +21,9 @@ hugging_face_user = os.getenv("HUGGING_FACE_USERNAME")
 
 ikea_models = []
 sd1point5_base_model = "runwayml/stable-diffusion-v1-5"
+
+clip_score_prom = prom.Gauge('clip_score', 'Clip Score: Image to Prompt correctness comparision')
+cosine_similarity_prom = prom.Gauge('cosine_similarity', 'Prompt to Image Caption Comparision')
 
 def getHuggingfaceModels():    
     api = HfApi()
@@ -153,9 +153,6 @@ def generate_image_caption(image_path):
     return caption
 
 def update_metrics(clip_score, cosine_similarity):
-    clip_score_prom = prom.Gauge('clip_score', 'Clip Score: Image to Prompt correctness comparision')
-    cosine_similarity_prom = prom.Gauge('cosine_similarity', 'Prompt to Image Caption Comparision')
-
     clip_score_prom.set(clip_score)
     cosine_similarity_prom.set(cosine_similarity)
 
@@ -198,12 +195,18 @@ with gr.Blocks() as demo:
     generate_image_button.click(fn=generate_image, inputs=[user_prompt, use_ai_prompt, ai_generated_prompt, model_list, cfg, num_inference_steps], outputs=[generated_image_output])
     refine_image.click(fn=refine_generated_image, inputs=[generated_image_output], outputs=[refine_image_output])
 
-def launch():
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+
+app = FastAPI()
+
+app = gr.mount_gradio_app(app, demo, path="/gradio")
+
+@app.get("/")
+def home():
+    return "Welcome to Ikea AI Room Designs"
 
 @app.get("/metrics")
-async def get_metrics():
+def get_metrics():
     return Response(media_type="text/plain", content=prom.generate_latest())
 
 if __name__ == "__main__":
-    launch()
+    uvicorn.run(app, host="0.0.0.0", port=7860)

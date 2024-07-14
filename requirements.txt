@@ -10,3 +10,4 @@ safetensors
 invisible_watermark
 torchmetrics
 prometheus-client
+uvicorn
